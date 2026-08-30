@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <title>BookOCR Browser v7.2 Experimental</title>
+</head>
+<body>
+<main id="app">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">Browser-only · v7.2 Experimental · Ink Guard + Stable Vertical Reading Order</div>
+      <h1>BookOCR · 自動版面 OCR v7.2 Experimental</h1>
+      <p>
+        v7.1 把 Detection 與 Recognition 分開選最適合的組合：
+        使用先前對老書直欄較穩的 PP-OCRv5 mobile Detector，再交給 PP-OCRv6 small Recognition。
+        Detector 會做一次安全補漏；太長的直欄則切成短段辨識後再接回，不再把整條長欄硬塞給 recognizer。
+      </p>
+    </div>
+    <div class="privacy">照片留在瀏覽器</div>
+  </header>
+
+  <section class="card">
+    <label id="dropZone" class="drop-zone">
+      <input id="fileInput" type="file" accept="image/*" hidden />
+      <img id="photoPreview" alt="原始跨頁照片" />
+      <div id="dropHint" class="drop-hint">
+        <strong>點擊或拖曳任何有文字的圖片</strong>
+        <span>書本、文件、截圖、招牌、海報都可以先丟。Auto 會先判斷版面。</span>
+      </div>
+    </label>
+  </section>
+
+  <section class="controls">
+    <div class="control info-control mode-control">
+      <span>OCR 模式</span>
+      <select id="ocrMode">
+        <option value="auto" selected>Auto（推薦：直接亂丟）</option>
+        <option value="traditional">傳統直書／右→左</option>
+        <option value="horizontal">橫排書籍／文件</option>
+        <option value="general">一般圖片／招牌／海報</option>
+      </select>
+      <small id="modeHint">Auto 會先用 Detector 判斷，不確定時仍可手動切換。</small>
+    </div>
+    <div class="control book-only-control">
+      <label>書脊位置 <b id="splitValue">50.0%</b></label>
+      <input id="splitRange" type="range" min="38" max="62" value="50" step="0.5" />
+    </div>
+    <div class="control book-only-control">
+      <label>書脊重疊保留 <b id="gutterValue">3.0%</b></label>
+      <input id="gutterRange" type="range" min="0" max="10" value="3.0" step="0.5" />
+      <small>左右頁會共享這段書脊區域，不再把中央文字直接刪掉。</small>
+    </div>
+
+    <div class="control book-only-control">
+      <label>頁面安全留白 <b id="pagePadValue">0.5%</b></label>
+      <input id="pagePadRange" type="range" min="0" max="10" value="0.5" step="0.5" />
+      <small>送進 UVDoc 前四周補少量白邊。v7.2 依這批老書實測預設 0.5%；太多留白會讓有效文字相對縮小，反而可能讓 Detector 更不穩。</small>
+    </div>
+
+    <div class="control">
+      <label>直欄上下延伸 <b id="columnExtendValue">1.0 字</b></label>
+      <input id="columnExtendRange" type="range" min="0" max="3" value="1.0" step="0.1" />
+      <small>V3 抽欄時上下各多留約幾個字高。最後少一兩字時拉大。</small>
+    </div>
+    <div class="control info-control">
+      <span>目前閱讀順序</span>
+      <b id="readingOrderLabel">Auto 判斷中</b>
+      <small id="readingOrderHint">傳統直書會強制右頁→左頁、右欄→左欄。</small>
+    </div>
+    <div class="control info-control">
+      <span>Recognition 模型</span>
+      <select id="recModel">
+        <option value="mobile" selected>推薦：PP-OCRv5 mobile + WebGPU（約 16.6 MB）</option>
+        <option value="server">重型：PP-OCRv5 server（約 84.5 MB）</option>
+      </select>
+      <label class="inline-check">
+        <input id="enhanceOcr" type="checkbox" checked />
+        精度增強 A/B（原圖＋增強圖；短欄多一版）
+      </label>
+
+      <label class="small-rescue-control">
+        <span>傳統高解析重採樣</span>
+        <select id="smallTextRescue">
+          <option value="off" selected>關閉（目前推薦）</option>
+          <option value="auto2">自動 2×（小字／短欄）</option>
+          <option value="strong">強力 2×＋4×（小字／短欄）</option>
+          <option value="all2">全部欄 2×（測試用，較慢）</option>
+        </select>
+      </label>
+
+      <small id="smallRescueHint">
+        你剛測到單純 2×／4× 不一定改善，所以 v6.0 預設先關掉；需要時仍可拿來 A/B 比較。
+      </small>
+
+      <label class="small-rescue-control cnn-rescue-control">
+        <span>AI 模糊字 CNN 救援</span>
+        <select id="cnnTextRescue">
+          <option value="off" selected>關閉（目前推薦）</option>
+          <option value="smart">智慧（實驗：極短欄必救，其餘可疑才救）</option>
+          <option value="short">所有短欄都跑 CNN（較慢）</option>
+        </select>
+      </label>
+
+      <small id="cnnRescueHint">
+        你剛測到 CNN 沒有改善「臺灣史」，所以 v6.1 預設關閉；保留純粹方便 A/B。
+      </small>
+
+      <label class="small-rescue-control server-rescue-control">
+        <span>PP-OCRv5 Server 高精度救援</span>
+        <select id="serverTextRescue">
+          <option value="off" selected>關閉（目前推薦）</option>
+          <option value="short6">測試：1～6 字短欄自動比較 Server</option>
+          <option value="smart10">智慧：1～10 字可疑欄才比較 Server</option>
+        </select>
+      </label>
+
+      <small id="serverRescueHint">
+        v5 server 已實測仍會把「臺灣史」認錯，所以 v6.2 預設關閉；保留作舊模型比較。
+      </small>
+
+      <label class="small-rescue-control v6-rescue-control">
+        <span>PP-OCRv6 最新模型救援</span>
+        <select id="v6TextRescue">
+          <option value="off">關閉</option>
+          <option value="small6" selected>v6 small：1～6 字短欄（約 21 MB，先試這個）</option>
+          <option value="medium6">v6 medium：1～6 字短欄（約 77 MB，精度優先）</option>
+        </select>
+      </label>
+
+      <small id="v6RescueHint">
+        正常正文仍跑 v5 mobile。只有 1～6 字短欄才額外比較 PP-OCRv6；
+        第一次下載後會走瀏覽器快取。
+      </small>
+
+      <div id="recTiming" class="rec-timing">
+        上次 Recognition：尚未執行
+      </div>
+    </div>
+  </section>
+
+  <details class="card advanced">
+    <summary>Detector 參數（已套用我們 Colab 的設定）</summary>
+    <div class="advanced-grid">
+      <label>
+        textPixelThreshold
+        <input id="pixelThreshold" type="number" min="0.05" max="0.9" step="0.01" value="0.20" />
+      </label>
+      <label>
+        boxScoreThreshold
+        <input id="boxThreshold" type="number" min="0.05" max="0.9" step="0.01" value="0.35" />
+      </label>
+      <label>
+        unclipRatio
+        <input id="unclipRatio" type="number" min="0.5" max="3" step="0.05" value="1.15" />
+      </label>
+      <label>
+        maxSideLength
+        <input id="maxSideLength" type="number" min="640" max="3000" step="32" value="2000" />
+      </label>
+    </div>
+    <label class="inline-check missing-column-check">
+      <input id="missingColumnRescue" type="checkbox" checked />
+      缺欄候選提示（安全模式；不會自動改欄）
+    </label>
+    <small>
+      Detector/PCA 完成後，只把可能漏掉的欄畫成「綠色虛線候選」。
+      候選不參與 V3 / OCR，也不會擠壓旁邊欄位；真的需要時再直接點綠線採用。
+    </small>
+    <p>
+      預設值就是我們之前最後用的：
+      <code>0.20 / 0.35 / 1.15 / 2000 / max</code>。
+      先不要亂改，除非紅框明顯漏很多或黏太寬。
+    </p>
+  </details>
+
+  <section class="actions">
+    <span id="directV6Steps" class="action-group">
+      <button id="directV6Btn" class="direct-primary" disabled>新主路徑：Hybrid 兩次檢查 OCR</button>
+    </span>
+    <span id="verticalSteps" class="action-group legacy-actions">
+      <button id="splitBtn" class="secondary" disabled>1. 預覽切頁</button>
+      <button id="uvBtn" disabled>2. UVDoc 展平</button>
+      <button id="detBtn" disabled>3. 舊 V3：找中心線</button>
+      <button id="extractBtn" disabled>4. 舊 V3：抽直欄</button>
+      <button id="recBtn" disabled>5. 舊 V3：Recognition</button>
+      <button id="restoreColumnsBtn" class="ghost" disabled>恢復全部刪除</button>
+    </span>
+    <button id="allBtn" disabled>Auto OCR 到文字（傳統直書走新主路徑）</button>
+    <button id="clearCacheBtn" class="ghost">清除模型快取</button>
+  </section>
+
+  <section class="progress-card card">
+    <div class="progress-top">
+      <strong id="status">等待照片。</strong>
+      <span id="runtimeBadge">偵測 GPU…</span>
+    </div>
+    <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    <div id="detail" class="detail"></div>
+  </section>
+
+  <section id="routerCard" class="card router-card hidden">
+    <div class="router-top">
+      <div>
+        <div class="eyebrow">Auto Layout Router</div>
+        <h2 id="routerTitle">尚未分析</h2>
+      </div>
+      <span id="routerConfidence" class="stats"></span>
+    </div>
+    <p id="routerDetail"></p>
+  </section>
+
+
+  <section id="directV6Pipeline" class="stage hidden">
+    <div class="stage-heading">
+      <div class="eyebrow">v7.0 NEW PRIMARY PATH</div>
+      <h2>標準 PP-OCRv6：Detector 四邊形 → 直接 Recognition</h2>
+      <p>
+        這條路徑仍完全不使用 PCA 中心線或 V3 corridor。
+        第一遍用 v5 Detector 正常找框，第二遍用同一 Detector 的 1.2× 敏感模式「只補第一遍完全沒抓到的框」。
+        Recognition 時，短欄整條送 v6；長欄依 Detector 四邊形沿長軸切成約 10～12 字小段再辨識。
+      </p>
+      <div class="direct-principles">
+        <span>✓ v5 Detector：老書直欄較穩</span>
+        <span>✓ 第二遍只補漏框，不覆蓋第一遍</span>
+        <span>✓ v6 Recognition：短繁體字較強</span>
+        <span>✓ 長欄自動切成 10～12 字小段</span>
+        <span>✓ 可疑小段才擴框重認一次</span>
+        <span>✓ 不用中心線 / V3 corridor</span>
+      </div>
+
+      <label class="small-rescue-control direct-pass-control">
+        <span>Hybrid 檢查模式</span>
+        <select id="directPassMode">
+          <option value="single">快速：v5 Detector 單次 + 分段 v6</option>
+          <option value="two" selected>平衡（推薦）：第二遍補漏 + 分段 v6 + 可疑段擴框</option>
+        </select>
+      </label>
+      <small id="directPassHint">
+        第二遍 Detector 只新增第一遍沒有的框；不會拿較寬的第二遍框去取代原框，所以不會再把其他欄裁壞。
+      </small>
+      <label class="small-rescue-control direct-pass-control">
+        <span>空白／透字 Ink Guard</span>
+        <select id="directInkGuard">
+          <option value="off">關閉（保留所有 Detector 框）</option>
+          <option value="balanced" selected>平衡（推薦：第二遍補框較嚴格）</option>
+          <option value="strict">嚴格（透字很多時測試）</option>
+        </select>
+      </label>
+      <small id="directInkGuardHint">
+        Recognition 前先看原始像素是否真的有深色前景、局部對比與垂直筆畫覆蓋。
+        沒有足夠墨跡的框直接丟掉，不讓 recognizer 在空白上硬猜中文字。
+      </small>
+    </div>
+
+    <div class="grid two vertical-spread-grid">
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>右頁 · v5 Detector Boxes / v6 Recognition</h3>
+          <span id="rightDirectStats" class="stats">尚未執行</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="rightDirectOverlay"></canvas>
+          <div class="empty" id="rightDirectOverlayEmpty">等待 Hybrid OCR</div>
+        </div>
+      </article>
+
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>左頁 · v5 Detector Boxes / v6 Recognition</h3>
+          <span id="leftDirectStats" class="stats">尚未執行</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="leftDirectOverlay"></canvas>
+          <div class="empty" id="leftDirectOverlayEmpty">等待 Hybrid OCR</div>
+        </div>
+      </article>
+    </div>
+
+    <div class="grid two vertical-spread-grid direct-result-grid">
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>右頁 · 直接辨識</h3>
+          <span id="rightDirectRecStats" class="stats">尚未辨識</span>
+        </div>
+        <div id="rightDirectRecognition" class="recognition-list">
+          <div class="empty">等待 Hybrid v5→v6 OCR</div>
+        </div>
+      </article>
+
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>左頁 · 直接辨識</h3>
+          <span id="leftDirectRecStats" class="stats">尚未辨識</span>
+        </div>
+        <div id="leftDirectRecognition" class="recognition-list">
+          <div class="empty">等待 Hybrid v5→v6 OCR</div>
+        </div>
+      </article>
+    </div>
+
+    <article class="card direct-summary-card">
+      <div class="result-title">
+        <h3>Direct OCR 診斷</h3>
+        <span id="directTiming" class="stats">尚未執行</span>
+      </div>
+      <p id="directSummary">
+        v7.2 驗收：①「臺灣史」維持正確；② 相鄰直欄不再被錯合成 9 / 9.2；
+        ③ 像 17.2 / 17.3 那種只有淡透字、紙紋或陰影的區域，在 Recognition 前就被 Ink Guard 丟掉。
+      </p>
+    </article>
+  </section>
+
+  <div id="verticalPipeline">
+  <section class="stage legacy-stage">
+    <div class="legacy-banner">
+      舊 V3 比較路徑：保留給 A/B / 手動救援，不再是 v7.0 傳統直書的主 OCR 路徑。
+    </div>
+    <div class="stage-heading">
+      <h2>1. UVDoc 展平</h2>
+      <p>先維持上一版已驗證成功的展平結果。</p>
+    </div>
+    <div id="overlayEditBar" class="overlay-edit-bar hidden">
+      <div class="overlay-edit-main">
+        <div>
+          <strong id="overlayEditTitle">尚未選取欄位</strong>
+          <span id="overlayEditStatus">直接點／拖別的文字欄會立刻切換選取；黃色框不會再搶到隔壁欄的點擊。</span>
+        </div>
+        <div class="overlay-edit-actions">
+          <button id="rerunSelectedBtn" disabled>重新辨識選取欄</button>
+          <button id="resetSelectedBtn" class="ghost" disabled>還原此欄</button>
+          <button id="deleteSelectedBtn" class="ghost danger-soft" disabled>刪除此欄</button>
+          <button id="clearSelectedBtn" class="ghost" disabled>取消選取</button>
+        </div>
+      </div>
+      <div class="drag-guide compact">
+        <span>任一藍欄直接拖：選取＋移動</span>
+        <span>黃色框內任意處：整欄移動</span>
+        <span>↔ 左右白點：改寬度</span>
+        <span>↕ 上下白點：改長度</span>
+        <span>拖完不會自動 OCR</span>
+      </div>
+    </div>
+
+    <div class="grid two vertical-spread-grid">
+      <article class="card result-card">
+        <h3>右頁 · UVDoc</h3>
+        <div class="canvas-wrap">
+          <canvas id="rightFlat"></canvas>
+          <div class="empty" id="rightFlatEmpty">等待 UVDoc</div>
+        </div>
+      </article>
+      <article class="card result-card">
+        <h3>左頁 · UVDoc</h3>
+        <div class="canvas-wrap">
+          <canvas id="leftFlat"></canvas>
+          <div class="empty" id="leftFlatEmpty">等待 UVDoc</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="stage">
+    <div class="stage-heading">
+      <h2>2. Detector + PCA 中心線</h2>
+      <p>
+        紅色四邊形 = Detector；藍線 = PCA 中心線；綠色虛線「補？」只是缺欄候選。
+        綠色候選不影響 OCR；點它才正式採用。既有欄位仍可直接拖動或用 × 刪除。
+      </p>
+    </div>
+    <div class="grid two vertical-spread-grid">
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>右頁 · 中心線</h3>
+          <span id="rightStats" class="stats">尚未偵測</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="rightOverlay"></canvas>
+          <div class="empty" id="rightOverlayEmpty">等待 Detector</div>
+        </div>
+      </article>
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>左頁 · 中心線</h3>
+          <span id="leftStats" class="stats">尚未偵測</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="leftOverlay"></canvas>
+          <div class="empty" id="leftOverlayEmpty">等待 Detector</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="stage">
+    <div class="stage-heading">
+      <h2>3. V3 scanline/remap 抽欄</h2>
+      <p>
+        先看下面每個 Column 小圖；哪一欄有問題就直接點它。
+        畫面會回到上方對應頁並選中黃框，再直接拖曳修正。
+      </p>
+    </div>
+
+    <div class="grid two vertical-spread-grid">
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>右頁 · Columns</h3>
+          <span id="rightStripStats" class="stats">尚未抽欄</span>
+        </div>
+        <div id="rightStrips" class="strip-grid vertical-reading">
+          <div class="empty">等待 V3 抽欄</div>
+        </div>
+      </article>
+
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>左頁 · Columns</h3>
+          <span id="leftStripStats" class="stats">尚未抽欄</span>
+        </div>
+        <div id="leftStrips" class="strip-grid vertical-reading">
+          <div class="empty">等待 V3 抽欄</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="stage">
+    <div class="stage-heading">
+      <h2>4. PP-OCRv5 逐欄辨識</h2>
+      <p>
+        v6.2 改測最新 PP-OCRv6 recognizer：
+        正文照舊跑 v5 mobile；1～6 字短欄才額外比較 v6 small / medium。
+      </p>
+    </div>
+
+    <div class="grid two vertical-spread-grid">
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>右頁 · OCR</h3>
+          <span id="rightRecStats" class="stats">尚未辨識</span>
+        </div>
+        <div id="rightRecognition" class="recognition-list">
+          <div class="empty">等待 recognition</div>
+        </div>
+      </article>
+
+      <article class="card result-card">
+        <div class="result-title">
+          <h3>左頁 · OCR</h3>
+          <span id="leftRecStats" class="stats">尚未辨識</span>
+        </div>
+        <div id="leftRecognition" class="recognition-list">
+          <div class="empty">等待 recognition</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  </div>
+
+  <section id="generalPipeline" class="stage hidden">
+    <div class="stage-heading">
+      <h2>一般／橫排 OCR</h2>
+      <p id="generalModeDescription">
+        Auto 判斷為非傳統跨頁直書時，使用這條比較通用的文字區塊流程。
+      </p>
+    </div>
+
+    <div id="generalPages" class="general-pages"></div>
+
+    <article class="card result-card" style="margin-top:14px">
+      <div class="result-title">
+        <h3>文字區塊辨識</h3>
+        <span id="generalStats" class="stats">尚未辨識</span>
+      </div>
+      <div id="generalRecognition" class="recognition-list">
+        <div class="empty">等待 Auto OCR</div>
+      </div>
+    </article>
+  </section>
+
+  <section class="stage">
+    <div class="stage-heading">
+      <h2>合併全文</h2>
+      <p id="fullTextOrder">Auto 會依判斷到的版面組合文字；可在上方手動切換模式重跑。</p>
+    </div>
+    <article class="card text-output-card">
+      <div class="result-title">
+        <h3>OCR 文字</h3>
+        <div class="output-actions">
+          <button id="copyTextBtn" class="mini-action" disabled>複製</button>
+          <button id="downloadTextBtn" class="mini-action" disabled>下載 TXT</button>
+        </div>
+      </div>
+      <textarea id="fullText" placeholder="辨識完成後文字會出現在這裡"></textarea>
+    </article>
+  </section>
+
+  <section class="card note">
+    <h2>v7.0 驗收重點</h2>
+    <p>
+      先只看新主路徑的 Direct Boxes：同一條長欄是否從上到下都完整保留，
+      以及「臺灣史」是否仍正確。若 Direct 路徑明顯較穩，後續就逐步淘汰中心線/V3 作為主要 OCR crop。
+    </p>
+  </section>
+</main>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

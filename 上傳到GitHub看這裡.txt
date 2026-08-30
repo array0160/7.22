@@ -1,0 +1,32 @@
+BookOCR v7.2 Experimental
+
+這版修三件事：
+
+1. 頁面安全留白預設改 0.5%
+2. 修 9 / 9.2 相鄰欄誤合併
+3. 空白／透字 Ink Guard
+
+閱讀順序修正：
+如果兩個 Detector box 在 y 方向大量重疊，
+即使 x 很接近，也一定是左右不同欄。
+只有真正上下接續的 box 才能合併。
+
+Ink Guard：
+Recognition 前先檢查框內真的有沒有：
+- 足夠對比
+- 深色墨跡
+- 垂直區段筆畫覆蓋
+
+沒東西：
+直接丟掉，不讓 OCR 硬猜。
+
+第二遍敏感補框會使用更嚴格的 Ink Guard，
+專門減少 17.2 / 17.3 那種空白 hallucination。
+
+建議：
+安全留白 0.5%
+Hybrid 平衡
+Ink Guard 平衡
+
+新版標題：
+BookOCR · 自動版面 OCR v7.2 Experimental

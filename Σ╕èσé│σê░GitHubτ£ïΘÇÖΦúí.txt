@@ -1,0 +1,30 @@
+BookOCR v7.1 Experimental — Hybrid Chunked Direct
+
+這次同時修 Detection 和 Recognition。
+
+核心：
+v5 Detector + v6 Recognizer
+
+原因：
+v5 Detector 在你的老書頁抓欄比較完整；
+v6 Recognizer 已經實測能把「臺灣史」認對。
+
+平衡模式：
+1. v5 Detector 第一次正常跑
+2. v5 Detector 第二次 1.2x 敏感補漏
+3. 第二遍只新增漏框，不替換第一遍
+4. 短欄直接 v6 Recognition
+5. 長欄切成約 10～12 字小段
+6. 小段有約 1.4 字 overlap
+7. 辨識後自動去重接回
+8. 最多 12 個可疑段才擴框重認
+
+這版不再把 30～40 字長欄整條塞進 v6 recognizer。
+
+請測：
+「臺灣史」
+漏掉的右側欄
+以及長正文錯字率。
+
+新版標題：
+BookOCR · 自動版面 OCR v7.1 Experimental
